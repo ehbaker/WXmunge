@@ -44,20 +44,39 @@ def remove_error_temperature_values(temps, low_temp_cutoff, high_temp_cutoff):
     temps.loc[temps>high_temp_cutoff]=np.nan
     temps.loc[temps<low_temp_cutoff]=np.nan
     return(temps)
+
+def remove_error_precip_values(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
+    '''
+    precip_cumulative: pandas series of cumulative precip values; index must be a date-time
+    obvious_error_precip_cutoff..: number, giving value that for a 15 minute timestep is obviously an error (unlikely to rain 0.3m in 15 min)
+    precip_high_cutoff: 
+    precip_drain_cutoff: negative number giving value above which a negative 15 min change is related to station maintenance draining
+    '''
+    precip_edit=precip_cumulative.copy() #create copy, to avoid inadvertently editing original pandas series
+    dPrecip=precip_edit -precip_edit.shift(1)
     
+    dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
+    dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0
+    dPrecip.loc[dPrecip<precip_drain_cutoff]=0
+    dPrecip[(dPrecip.isnull())]=0 #NANs are associated with station maintenance; set precip at this time to 0
+    new_precip_cumulative=dPrecip.cumsum()
+    return(new_precip_cumulative)
+    
+
 def hampel(x,k, t0=3):
     '''adapted from hampel function in R package pracma
-    x=
-    k= number of items in window/2 (# forwarda and backward wanted to capture in median filter)
+    x= 1-d numpy array of numbers to be filtered
+    k= number of items in window/2 (# forward and backward wanted to capture in median filter)
+    t0= number of standard deviations to use; 3 is default
     '''
     n = len(x)
     y = x #y is the corrected series
     L = 1.4826
-    for i in list(range((k + 1),(n - k))):
-        if np.isnan(x[(i - k):(i + k)]).all():
+    for i in range((k + 1),(n - k)):
+        if np.isnan(x[(i - k):(i + k+1)]).all(): #the +1 is neccessary for Python indexing (excludes last value k if not present)
             continue
-        x0 = np.nanmedian(x[(i - k):(i + k)])
-        S0 = L * np.nanmedian(np.abs(x[(i - k):(i + k)] - x0))
+        x0 = np.nanmedian(x[(i - k):(i + k+1)])
+        S0 = L * np.nanmedian(np.abs(x[(i - k):(i + k+1)] - x0))
         if (np.abs(x[i] - x0) > t0 * S0):
             y[i] = x0
     return(y)
@@ -116,20 +135,20 @@ def smooth_precip_Nayak2010(dat, dPrecip):
       -relies on inner_precip_smoothing_func_Nayak2010, as included above in this module
     -----
     dat= dataframe, containing weather data.
-    dprecip= text; name of column containing the incremental 
+    dprecip= text; name of column containing the incremental precipitation values
     '''
     
     dat2=dat.copy() #copy, to avoid inadvertently altering original dataframe
     #Smooth data in forward direction
-    print("smoothing data in forward direction; may take a minute")
+    print("  smoothing data in forward direction; may take a minute")
     smooth_forward=inner_precip_smoothing_func_Nayak2010(dat2[dPrecip].values)
-    print("done with forward smoothing")
+    print("  done with forward smoothing")
     #Smooth Data in backwards direction
     reverse_sorted_data=dat2[dPrecip].copy().sort_index(ascending=False).values
-    print("smoothing data in reverse direction; may take a minute")
+    print("  smoothing data in reverse direction; may take a minute")
     smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
     smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
-    print('done with backwards')
+    print('  done with backwards')
 
     #Average
     smooth_forward.index=dat2.index #Reindex in order to add back to original dataframe
@@ -149,5 +168,6 @@ def smooth_precip_Nayak2010(dat, dPrecip):
     
     #Return dataframe with new smoothed precip column
     new_col_name=dPrecip+'_smooth'
+    print("storing " + new_col_name)
     dat[new_col_name]=dat2['avg'].values #overwrite old precip column with new smoothed values
     return(dat)
