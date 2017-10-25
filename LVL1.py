@@ -52,14 +52,27 @@ def remove_error_precip_values(precip_cumulative, obvious_error_precip_cutoff, p
     precip_high_cutoff: 
     precip_drain_cutoff: negative number giving value above which a negative 15 min change is related to station maintenance draining
     '''
-    precip_edit=precip_cumulative.copy() #create copy, to avoid inadvertently editing original pandas series
-    dPrecip=precip_edit -precip_edit.shift(1)
     
+    #The order of the steps here is very important; as soon as derivative is created and re-summed, loose info on sensor malfunctions
+    
+    precip_edit=precip_cumulative.copy() #create copy, to avoid inadvertently editing original pandas series
+     
+    #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in CUMULATIVE timeseres
+    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
+    for ii in range(0, len(dPrecip)):
+        if abs(dPrecip[ii])>obvious_error_precip_cutoff:
+            precip_edit[ii]=np.nan
+
+    #Step2 : interpolate small gaps in the timeseries (< 1hr of missing data)
+    precip_edit=precip_edit.interpolate(method='linear', limit=3)
+       
+    #Step3 -recalculate incremental precip, set values outside expected range to 0
+    dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
     dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
     dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0
     dPrecip.loc[dPrecip<precip_drain_cutoff]=0
-    dPrecip[(dPrecip.isnull())]=0 #NANs are associated with station maintenance; set precip at this time to 0
     new_precip_cumulative=dPrecip.cumsum()
+    new_precip_cumulative[0]=0 #set beginning equal to 0, not NAN as is created with the cumulative sum
     return(new_precip_cumulative)
     
 
