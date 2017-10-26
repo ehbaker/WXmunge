@@ -45,7 +45,7 @@ def remove_error_temperature_values(temps, low_temp_cutoff, high_temp_cutoff):
     temps.loc[temps<low_temp_cutoff]=np.nan
     return(temps)
 
-def remove_error_precip_values(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
+def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
     '''
     precip_cumulative: pandas series of cumulative precip values; index must be a date-time
     obvious_error_precip_cutoff..: number, giving value that for a 15 minute timestep is obviously an error (unlikely to rain 0.3m in 15 min)
@@ -62,21 +62,64 @@ def remove_error_precip_values(precip_cumulative, obvious_error_precip_cutoff, p
     for ii in range(0, len(dPrecip)):
         if abs(dPrecip[ii])>obvious_error_precip_cutoff:
             precip_edit[ii]=np.nan
-
-    #Step2 : interpolate small gaps in the timeseries (< 1hr of missing data)
-    precip_edit=precip_edit.interpolate(method='linear', limit=3)
-       
-    #Step3 -recalculate incremental precip, set values outside expected range to 0
+    
+    #Step2: remove remaining outliers using one-day (96 samples) median filter
+    rolling_median=precip_edit.rolling(96).median().fillna(method='ffill').fillna(method='bfill')
+    difference=np.abs(precip_edit - rolling_median)
+    threshold=0.2 #threshold for difference between median and the given value
+    outlier_idx=difference>threshold
+    precip_edit[outlier_idx]=np.nan
+    
+    #Step3 - remove NANs in cumulative series output by instruments
+    precip_edit=precip_edit.interpolate(method='linear', limit=96) #interpolate for gaps < 1 day
+    
+    #Step4 -recalculate incremental precip, set values outside expected range to 0
     dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
     dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
-    dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0
-    dPrecip.loc[dPrecip<precip_drain_cutoff]=0
+    dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0 #set precip refills to 0
+    dPrecip.loc[dPrecip<precip_drain_cutoff]=0 #set precip drains to 0
     new_precip_cumulative=dPrecip.cumsum()
     new_precip_cumulative[0]=0 #set beginning equal to 0, not NAN as is created with the cumulative sum
     return(new_precip_cumulative)
-    
 
-def hampel(x,k, t0=3):
+
+def precip_remove_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff):
+    precip_edit=precip_cumulative.copy()
+    #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in CUMULATIVE timeseres
+    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
+    for ii in range(0, len(dPrecip)):
+        if abs(dPrecip[ii])>obvious_error_precip_cutoff:
+            precip_edit[ii]=np.nan
+    return(precip_edit)
+
+def precip_remove_daily_outliers(precip_cumulative, n=96):
+    precip_edit=precip_cumulative.copy()
+    #Step2: remove remaining outliers using one-day (96 samples for 15 min data) median filter
+    rolling_median=precip_edit.rolling(n).median().fillna(method='ffill').fillna(method='bfill')
+    difference=np.abs(precip_edit - rolling_median)
+    threshold=0.2 #threshold for difference between median and the given value
+    outlier_idx=difference>threshold
+    precip_edit[outlier_idx]=np.nan    
+    return(precip_edit)
+    
+def precip_interpolate_gaps_under1day(precip_cumulative, n=96):
+    #Step3 - remove NANs in cumulative series output by instruments
+    precip_edit=precip_cumulative.copy()
+    precip_edit=precip_edit.interpolate(method='linear', limit=96)
+    return(precip_edit)
+    
+def precip_remove_maintenance_noise(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
+    precip_edit=precip_cumulative.copy()
+    dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
+    dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
+    dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0 #set precip refills to 0
+    dPrecip.loc[dPrecip<precip_drain_cutoff]=0 #set precip drains to 0
+    new_precip_cumulative=dPrecip.cumsum()
+    new_precip_cumulative[0]=0 #set beginning equal to 0, not NAN as is created with the cumulative sum
+    return(new_precip_cumulative)
+
+
+def hampel_old_loop(x,k, t0=3):
     '''adapted from hampel function in R package pracma
     x= 1-d numpy array of numbers to be filtered
     k= number of items in window/2 (# forward and backward wanted to capture in median filter)
@@ -93,6 +136,23 @@ def hampel(x,k, t0=3):
         if (np.abs(x[i] - x0) > t0 * S0):
             y[i] = x0
     return(y)
+    
+def hampel(vals, k=7, t0=3):
+    '''
+    vals: pandas series of values from which to remove outliers
+    k: size of window (including the sample; 7 is equal to 3 on either side of value)
+    '''
+    #Hampel Filter
+    
+    L= 1.4826
+    rolling_median=vals.rolling(7).median().fillna(method='ffill').fillna(method='bfill')
+    rolling_sd=vals.rolling(7).std().fillna(method='ffill').fillna(method='bfill')
+    
+    difference=np.abs(vals - rolling_median)
+    threshold= t0 *L * rolling_sd
+    outlier_idx=difference>threshold
+    vals[outlier_idx]=rolling_median[outlier_idx]
+    return(vals)
     
 
 def inner_precip_smoothing_func_Nayak2010(precip):
@@ -155,13 +215,11 @@ def smooth_precip_Nayak2010(dat, dPrecip):
     #Smooth data in forward direction
     print("  smoothing data in forward direction; may take a minute")
     smooth_forward=inner_precip_smoothing_func_Nayak2010(dat2[dPrecip].values)
-    print("  done with forward smoothing")
     #Smooth Data in backwards direction
     reverse_sorted_data=dat2[dPrecip].copy().sort_index(ascending=False).values
     print("  smoothing data in reverse direction; may take a minute")
     smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
     smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
-    print('  done with backwards')
 
     #Average
     smooth_forward.index=dat2.index #Reindex in order to add back to original dataframe
@@ -181,6 +239,21 @@ def smooth_precip_Nayak2010(dat, dPrecip):
     
     #Return dataframe with new smoothed precip column
     new_col_name=dPrecip+'_smooth'
-    print("storing " + new_col_name)
     dat[new_col_name]=dat2['avg'].values #overwrite old precip column with new smoothed values
     return(dat)
+    
+def rename_pandas_columns_for_plotting(data, desired_columns, append_text):
+    '''
+    Function that takes dataframe, subsets to desired columns, and renames those columns as indicated.
+    For plotting multiple iterations of the same data in a single plot, but with different labels.
+    data: dataframe
+    desired_columns: list of what columns the text should be appended to
+    append_text: text to append to the selected columns
+    '''
+    append_text= append_text
+    df=data[desired_columns].copy()
+    df=df.add_suffix(append_text)
+    return(df)
+    
+    
+    
