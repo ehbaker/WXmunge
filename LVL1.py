@@ -109,17 +109,32 @@ def precip_interpolate_gaps_under1day(precip_cumulative, n=96):
     return(precip_edit)
     
 def precip_remove_maintenance_noise(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
+    '''
+    returns incremental precip
+    '''
     precip_edit=precip_cumulative.copy()
     dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
     dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
     dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0 #set precip refills to 0
     dPrecip.loc[dPrecip<precip_drain_cutoff]=0 #set precip drains to 0
-    new_precip_cumulative=dPrecip.cumsum()
-    new_precip_cumulative[0]=0 #set beginning equal to 0, not NAN as is created with the cumulative sum
-    return(new_precip_cumulative)
+    return(dPrecip)
+    
+def precip_remove_high_frequency_noiseNayak2010(precip_incremental, noise):
+    #THIS IS CURRENTLY BROKEN! LAME!!! UGHHH!!
+    for ii in range(1, len(precip_incremental)):
+        if abs(precip_incremental[ii])>noise:
+            jj=ii #create new name for iterator
+            for jj in range(ii, len(precip_incremental)):
+                newslice=precip_incremental[jj+1:jj+6]
+                if(newslice<noise).all():
+                    precip_incremental[ii:jj]= (precip_incremental[jj] -precip_incremental[ii])/(jj-ii)
+                    print("edited noise at locations " + str(ii) + ":" +str(jj))
+                    break #this simple exits the inner loop, continuing the outer
+    return(precip_incremental)
+                    
 
 
-def hampel_old_loop(x,k, t0=3):
+def hampel_old_loop(x,k, t0=3):    
     '''adapted from hampel function in R package pracma
     x= 1-d numpy array of numbers to be filtered
     k= number of items in window/2 (# forward and backward wanted to capture in median filter)
@@ -131,27 +146,35 @@ def hampel_old_loop(x,k, t0=3):
     for i in range((k + 1),(n - k)):
         if np.isnan(x[(i - k):(i + k+1)]).all(): #the +1 is neccessary for Python indexing (excludes last value k if not present)
             continue
-        x0 = np.nanmedian(x[(i - k):(i + k+1)])
+        x0 = np.nanmedian(x[(i - k):(i + k+1)]) #median
         S0 = L * np.nanmedian(np.abs(x[(i - k):(i + k+1)] - x0))
         if (np.abs(x[i] - x0) > t0 * S0):
             y[i] = x0
     return(y)
     
-def hampel(vals, k=7, t0=3):
+def hampel(vals_orig, k=7, t0=3):
     '''
     vals: pandas series of values from which to remove outliers
     k: size of window (including the sample; 7 is equal to 3 on either side of value)
     '''
+    #Make copy so original not edited
+    vals=vals_orig.copy()    
     #Hampel Filter
-    
     L= 1.4826
-    rolling_median=vals.rolling(7).median().fillna(method='ffill').fillna(method='bfill')
-    rolling_sd=vals.rolling(7).std().fillna(method='ffill').fillna(method='bfill')
-    
-    difference=np.abs(vals - rolling_median)
-    threshold= t0 *L * rolling_sd
+    rolling_median=vals.rolling(k).median()
+    difference=np.abs(rolling_median-vals)
+    median_abs_deviation=difference.rolling(k).median()
+    threshold= t0 *L * median_abs_deviation
     outlier_idx=difference>threshold
-    vals[outlier_idx]=rolling_median[outlier_idx]
+    vals[outlier_idx]=np.nan
+    return(vals)
+    
+def basic_median_outlier_strip(vals_orig, k, threshold):
+    vals=vals_orig.copy()
+    rolling_median=vals.rolling(k).median()
+    difference=np.abs(rolling_median-vals)
+    outlier_idx=difference>threshold
+    vals[outlier_idx]=np.nan
     return(vals)
     
 
@@ -242,7 +265,7 @@ def smooth_precip_Nayak2010(dat, dPrecip):
     dat[new_col_name]=dat2['avg'].values #overwrite old precip column with new smoothed values
     return(dat)
     
-def rename_pandas_columns_for_plotting(data, desired_columns, append_text):
+def rename_pandas_columns_for_plotting(data_o, desired_columns, append_text):
     '''
     Function that takes dataframe, subsets to desired columns, and renames those columns as indicated.
     For plotting multiple iterations of the same data in a single plot, but with different labels.
@@ -250,6 +273,7 @@ def rename_pandas_columns_for_plotting(data, desired_columns, append_text):
     desired_columns: list of what columns the text should be appended to
     append_text: text to append to the selected columns
     '''
+    data=data_o.copy()
     append_text= append_text
     df=data[desired_columns].copy()
     df=df.add_suffix(append_text)
