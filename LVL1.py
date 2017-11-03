@@ -83,14 +83,27 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
     return(new_precip_cumulative)
 
 
-def precip_remove_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff):
+def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff):
     precip_edit=precip_cumulative.copy()
-    #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in CUMULATIVE timeseres
+    #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in incremental timeseres
     dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
-    for ii in range(0, len(dPrecip)):
+   
+    #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps)
+    for ii in range(2, len(dPrecip)):
+    #If sum of 3 values in a row have a value > cutoff, set all 3 to 0
+        if abs(dPrecip[ii-2])+abs(dPrecip[ii-1])+abs(dPrecip[ii])>obvious_error_precip_cutoff:
+            dPrecip[ii-2:ii+1]=0
+            print("removed at " + str(ii-2)+ ":" + str(ii))
+    
+    #Set locations where a single value is > 30 cm change to 0
+    for ii in range(0, len(dPrecip)): #remove places where a single value is > 30 cm change
         if abs(dPrecip[ii])>obvious_error_precip_cutoff:
-            precip_edit[ii]=np.nan
-    return(precip_edit)
+            dPrecip.iloc[ii]=0
+            print("removed at " + str(ii))
+
+    
+    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=dPrecip)
+    return(new_cumulative)
 
 def precip_remove_daily_outliers(precip_cumulative, n=96):
     precip_edit=precip_cumulative.copy()
@@ -108,31 +121,66 @@ def precip_interpolate_gaps_under1day(precip_cumulative, n=96):
     precip_edit=precip_edit.interpolate(method='linear', limit=96)
     return(precip_edit)
     
-def precip_remove_maintenance_noise(precip_cumulative, obvious_error_precip_cutoff, precip_high_cutoff, precip_drain_cutoff):
+def precip_remove_maintenance_noise(precip_cumulative, obvious_error_precip_cutoff, noise_cutoff):
     '''
     returns incremental precip
     '''
     precip_edit=precip_cumulative.copy()
     dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
-    dPrecip.loc[dPrecip>obvious_error_precip_cutoff]=0
-    dPrecip.loc[(dPrecip>precip_high_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0 #set precip refills to 0
-    dPrecip.loc[dPrecip<precip_drain_cutoff]=0 #set precip drains to 0
-    return(dPrecip)
+    dPrecip.loc[abs(dPrecip)>obvious_error_precip_cutoff]=0
+    dPrecip.loc[(dPrecip>noise_cutoff) & (dPrecip.index.month>=8) & (dPrecip.index.month<=11)]=0 #set precip refills to 0 in fall months
+    dPrecip.loc[abs(dPrecip)>noise_cutoff]=0 #set precip drains to 0
     
-def precip_remove_high_frequency_noiseNayak2010(precip_incremental, noise):
-    #THIS IS CURRENTLY BROKEN! LAME!!! UGHHH!!
+    #Re-sum cumulative timeseries
+    new_cumulative=calculate_cumulative(precip_cumulative, dPrecip)
+    return(new_cumulative)
+    
+def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, bucket_fill_drain_cutoff, n_forward_noise_free=20):
+    '''
+    precip_cumulative_og= pandas series of cumulative precipitation
+    noise: numeric; limit for incremental change
+    bucket_fill_drain_cutoff= numeric; limit for change that indicates a bucket refill or drain, performed during station maintenance
+    '''
+    precip_cumulative=precip_cumulative_og.copy()
+    precip_cumulative=precip_cumulative.reindex() #reset index to integers from time
+    precip_incremental=precip_cumulative-precip_cumulative.shift(1)
     for ii in range(1, len(precip_incremental)):
+        start_noise=np.nan
+        end_noise=np.nan
         if abs(precip_incremental[ii])>noise:
-            jj=ii #create new name for iterator
-            for jj in range(ii, len(precip_incremental)):
-                newslice=precip_incremental[jj+1:jj+6]
-                if(newslice<noise).all():
-                    precip_incremental[ii:jj]= (precip_incremental[jj] -precip_incremental[ii])/(jj-ii)
-                    print("edited noise at locations " + str(ii) + ":" +str(jj))
-                    break #this simple exits the inner loop, continuing the outer
-    return(precip_incremental)
+            start_noise=ii-1 #mark value before error
+            for jj in range(ii, ii+40):
+                newslice=precip_incremental[jj+1:jj+n_forward_noise_free+1] #slice of N values forward from location noise identified
+                if (abs(newslice)>noise).any():
+                    continue #additional noise is present in new slice; get new slice with subsequent loop iteration
+                if(abs(newslice)<noise).all():
+                  end_noise=jj+1 #jj is still a noisy value that should be replaced
+                  if ii==jj:
+                      #print("single value removed at " + str(jj))
+                      Dy=precip_cumulative[end_noise]-precip_cumulative[start_noise]
+                      precip_incremental[jj]=Dy/2
+                      precip_incremental[jj+1]=Dy/2#[jj:jj+2] selects 2 values (jj and jj+1) only
+                      break #continue outer loop
+                  if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])<bucket_fill_drain_cutoff:    #if issue is noise
+                      precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
+                      precip_cumulative[start_noise+1: end_noise]=np.nan
+                      dY=precip_cumulative[end_noise] - precip_cumulative[start_noise]
+                      dx=(end_noise)-(start_noise+1)+1
+                      precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
+                      #print("interpolated noise at locations " + str(start_noise+1) + ":" +str(end_noise))
+                  if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
+                      precip_incremental[start_noise+1:end_noise] =0 #no incremental precip occurs during bucket drain or refill
+                      #print("removed gage maintenance at  " + str(start_noise+1) + ":" +str(end_noise))
+                  break #this simple exits the inner loop, continuing the outer
+                  
+            
+    #print("recalculating cumulative")
+    new_cumulative=precip_incremental.cumsum()
+    new_cumulative=new_cumulative + precip_cumulative[0]
+    new_cumulative[0]=precip_cumulative[0]
+    new_cumulative.reindex_like(precip_cumulative_og) #reset index to time
+    return(new_cumulative)
                     
-
 
 def hampel_old_loop(x,k, t0=3):    
     '''adapted from hampel function in R package pracma
@@ -155,7 +203,8 @@ def hampel_old_loop(x,k, t0=3):
 def hampel(vals_orig, k=7, t0=3):
     '''
     vals: pandas series of values from which to remove outliers
-    k: size of window (including the sample; 7 is equal to 3 on either side of value)
+    k: size of window (including the sample; 7 is equal to 3 on either side of value, which is the default in Matlab's implmentation)
+    t0= number of standard deviations before replacing; default = 3
     '''
     #Make copy so original not edited
     vals=vals_orig.copy()    
@@ -166,16 +215,25 @@ def hampel(vals_orig, k=7, t0=3):
     median_abs_deviation=difference.rolling(k).median()
     threshold= t0 *L * median_abs_deviation
     outlier_idx=difference>threshold
-    vals[outlier_idx]=np.nan
+    vals[outlier_idx]=rolling_median
     return(vals)
     
 def basic_median_outlier_strip(vals_orig, k, threshold):
+    '''
+    vals: pandas series of initial cumulative values
+    k: window size
+    threshold: cutoff threshold for values to strip
+    
+    RETURNS: series of instantaneous change values 
+    '''
     vals=vals_orig.copy()
+    dVals=vals-vals.shift(1)
     rolling_median=vals.rolling(k).median()
     difference=np.abs(rolling_median-vals)
     outlier_idx=difference>threshold
-    vals[outlier_idx]=np.nan
-    return(vals)
+    dVals[outlier_idx]=0 #set incremental change at index where cumulative is out of range to 0
+    #vals[outlier_idx]=np.nan # this was used when a cumulative timeseries was returned; keeping for future possible edits
+    return(dVals)
     
 
 def inner_precip_smoothing_func_Nayak2010(precip):
@@ -278,6 +336,18 @@ def rename_pandas_columns_for_plotting(data_o, desired_columns, append_text):
     df=data[desired_columns].copy()
     df=df.add_suffix(append_text)
     return(df)
-    
-    
+
+def calculate_cumulative(cumulative_vals_orig, incremental_vals):
+    '''
+    function to calculate cumulative timeseries from two things: an input (edited) incremental series, and the original cumulative series.
+
+    '''
+    #Original values in cumulative series
+    cumulative_vals_old=cumulative_vals_orig.copy()
+        
+    #Calculate cumulative sum of incremental values
+    new_cumulative=incremental_vals.cumsum()
+    new_cumulative = new_cumulative + cumulative_vals_old[0] 
+    new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+    return(new_cumulative)
     
