@@ -3,6 +3,7 @@
 '''
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 def isthisworking(): #This is here simply to trouble-shoot importing of the module
     print("Yes it is! Successful import! YAYYYYY!")
@@ -93,13 +94,13 @@ def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_p
     #If sum of 3 values in a row have a value > cutoff, set all 3 to 0
         if abs(dPrecip[ii-2])+abs(dPrecip[ii-1])+abs(dPrecip[ii])>obvious_error_precip_cutoff:
             dPrecip[ii-2:ii+1]=0
-            print("removed at " + str(ii-2)+ ":" + str(ii))
+            #print("removed at " + str(ii-2)+ ":" + str(ii))
     
     #Set locations where a single value is > 30 cm change to 0
     for ii in range(0, len(dPrecip)): #remove places where a single value is > 30 cm change
         if abs(dPrecip[ii])>obvious_error_precip_cutoff:
             dPrecip.iloc[ii]=0
-            print("removed at " + str(ii))
+            #print("removed at " + str(ii))
 
     
     new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=dPrecip)
@@ -149,14 +150,15 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
         end_noise=np.nan
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
-            for jj in range(ii, ii+40):
+            #print("noise starts at "+ str(precip_incremental.index[ii]))
+            for jj in range(ii, len(precip_incremental)):
                 newslice=precip_incremental[jj+1:jj+n_forward_noise_free+1] #slice of N values forward from location noise identified
                 if (abs(newslice)>noise).any():
                     continue #additional noise is present in new slice; get new slice with subsequent loop iteration
                 if(abs(newslice)<noise).all():
                   end_noise=jj+1 #jj is still a noisy value that should be replaced
                   if ii==jj:
-                      #print("single value removed at " + str(jj))
+                      #print("     single value removed at " + str(precip_incremental.index[jj]))
                       Dy=precip_cumulative[end_noise]-precip_cumulative[start_noise]
                       precip_incremental[jj]=Dy/2
                       precip_incremental[jj+1]=Dy/2#[jj:jj+2] selects 2 values (jj and jj+1) only
@@ -167,10 +169,10 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       dY=precip_cumulative[end_noise] - precip_cumulative[start_noise]
                       dx=(end_noise)-(start_noise+1)+1
                       precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
-                      #print("interpolated noise at locations " + str(start_noise+1) + ":" +str(end_noise))
+                      #print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
                       precip_incremental[start_noise+1:end_noise] =0 #no incremental precip occurs during bucket drain or refill
-                      #print("removed gage maintenance at  " + str(start_noise+1) + ":" +str(end_noise))
+                      #print("     removed gage maintenance at  " + str(start_noise+1) + ":" +str(end_noise))
                   break #this simple exits the inner loop, continuing the outer
                   
             
@@ -351,3 +353,7 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
     new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
     return(new_cumulative)
     
+def plot_comparrison(df_old, df_new, data_col_name, label_old, label_new):
+    ax=df_old[data_col_name].plot(label=label_old, title=df_old[data_col_name].name, color='red')
+    df_new[data_col_name].plot(color='blue', ax=ax, label=label_new)
+    plt.legend()
