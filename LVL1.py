@@ -172,7 +172,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       #print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
                       precip_incremental[start_noise+1:end_noise] =0 #no incremental precip occurs during bucket drain or refill
-                      #print("     removed gage maintenance at  " + str(start_noise+1) + ":" +str(end_noise))
+                      print("     removed gage maintenance at  " + str(precip_incremental[start_noise+1]) + ":" +str(precip_incremental[end_noise]))
                   break #this simple exits the inner loop, continuing the outer
                   
             
@@ -284,30 +284,31 @@ def inner_precip_smoothing_func_Nayak2010(precip):
     return(precip)
     
     
-def smooth_precip_Nayak2010(dat, dPrecip):
+def smooth_precip_Nayak2010(precip_cumulative):
     '''
     Routine for smoothing precipitation data from Nayak 2010 thesis/ 2008 paper.
     Returns dataframe with smoothed precip column (overwrites existing column)
       -relies on inner_precip_smoothing_func_Nayak2010, as included above in this module
     -----
-    dat= dataframe, containing weather data.
-    dprecip= text; name of column containing the incremental precipitation values
+    precip_cumulative: pandas series of data to smooth
     '''
     
-    dat2=dat.copy() #copy, to avoid inadvertently altering original dataframe
+    precip=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
+    precip_incr=precip-precip.shift(1)
     #Smooth data in forward direction
     print("  smoothing data in forward direction; may take a minute")
-    smooth_forward=inner_precip_smoothing_func_Nayak2010(dat2[dPrecip].values)
+    smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
     #Smooth Data in backwards direction
-    reverse_sorted_data=dat2[dPrecip].copy().sort_index(ascending=False).values
+    reverse_sorted_data=precip_incr.copy().sort_index(ascending=False).values
     print("  smoothing data in reverse direction; may take a minute")
     smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
     smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
 
     #Average
-    smooth_forward.index=dat2.index #Reindex in order to add back to original dataframe
-    smooth_backwards.index=dat2.index #Reindex in order to add back to original dataframe
+    smooth_forward.index=precip_cumulative.index #Reindex in order to add back to original dataframe
+    smooth_backwards.index=precip_cumulative.index #Reindex in order to add back to original dataframe
     
+    dat2=pd.DataFrame()
     dat2['smooth_forward']=smooth_forward      #re-combine into single dataframe
     dat2['smooth_backwards']=smooth_backwards
     dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1)
@@ -320,10 +321,13 @@ def smooth_precip_Nayak2010(dat, dPrecip):
         if dat2.ix[ii, 'avg']<0:
             dat2.ix[ii, 'avg']=0   
     
-    #Return dataframe with new smoothed precip column
-    new_col_name=dPrecip+'_smooth'
-    dat[new_col_name]=dat2['avg'].values #overwrite old precip column with new smoothed values
-    return(dat)
+    #New smooth precip data
+    smooth_incr_precip=dat2['avg'].values #overwrite old precip column with new smoothed values
+    
+    #Re-sum cumulative timeseries
+    new_cumulative=calculate_cumulative(precip_cumulative, smooth_incr_precip)
+    
+    return(new_cumulative)
     
 def rename_pandas_columns_for_plotting(data_o, desired_columns, append_text):
     '''
@@ -353,7 +357,7 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
     new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
     return(new_cumulative)
     
-def plot_comparrison(df_old, df_new, data_col_name, label_old, label_new):
+def plot_comparrison(df_old, df_new, data_col_name, label_old='original', label_new='new'):
     ax=df_old[data_col_name].plot(label=label_old, title=df_old[data_col_name].name, color='red')
     df_new[data_col_name].plot(color='blue', ax=ax, label=label_new)
     plt.legend()
