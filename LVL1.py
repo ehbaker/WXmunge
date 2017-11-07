@@ -84,7 +84,7 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
     return(new_precip_cumulative)
 
 
-def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff):
+def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff, noise_cutoff):
     precip_edit=precip_cumulative.copy()
     #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in incremental timeseres
     dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
@@ -101,8 +101,11 @@ def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_p
         if abs(dPrecip[ii])>obvious_error_precip_cutoff:
             dPrecip.iloc[ii]=0
             #print("removed at " + str(ii))
+            
+        #Remove noise; where change is bigger than a given noise cutoff
+        if abs(dPrecip[ii])>noise_cutoff:
+            dPrecip.iloc[ii]=0 #remove noise
 
-    
     new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=dPrecip)
     return(new_cumulative)
 
@@ -150,7 +153,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
         end_noise=np.nan
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
-            #print("noise starts at "+ str(precip_incremental.index[ii]))
+            print("noise starts at "+ str(precip_incremental.index[ii])+ " ; " + str(ii))
             for jj in range(ii, len(precip_incremental)):
                 newslice=precip_incremental[jj+1:jj+n_forward_noise_free+1] #slice of N values forward from location noise identified
                 if (abs(newslice)>noise).any():
@@ -158,20 +161,20 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                 if(abs(newslice)<noise).all():
                   end_noise=jj+1 #jj is still a noisy value that should be replaced
                   if ii==jj:
-                      #print("     single value removed at " + str(precip_incremental.index[jj]))
+                      print("     single value removed at " + str(precip_incremental.index[jj]))
                       Dy=precip_cumulative[end_noise]-precip_cumulative[start_noise]
                       precip_incremental[jj]=Dy/2
                       precip_incremental[jj+1]=Dy/2#[jj:jj+2] selects 2 values (jj and jj+1) only
                       break #continue outer loop
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])<bucket_fill_drain_cutoff:    #if issue is noise
-                      precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
-                      precip_cumulative[start_noise+1: end_noise]=np.nan
+                      #precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
+                      #precip_cumulative[start_noise+1: end_noise]=np.nan
                       dY=precip_cumulative[end_noise] - precip_cumulative[start_noise]
                       dx=(end_noise)-(start_noise+1)+1
                       precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
-                      #print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
+                      print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
-                      precip_incremental[start_noise+1:end_noise] =0 #no incremental precip occurs during bucket drain or refill
+                      precip_incremental[start_noise+1:end_noise+1] =0 #no incremental precip occurs during bucket drain or refill
                       print("     removed gage maintenance at  " + str(precip_incremental[start_noise+1]) + ":" +str(precip_incremental[end_noise]))
                   break #this simple exits the inner loop, continuing the outer
                   
@@ -282,6 +285,10 @@ def inner_precip_smoothing_func_Nayak2010(precip):
             precip[ii]=precip[ii]
         
     return(precip)
+ 
+    
+    
+    
     
     
 def smooth_precip_Nayak2010(precip_cumulative):
@@ -295,6 +302,8 @@ def smooth_precip_Nayak2010(precip_cumulative):
     
     precip=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
     precip_incr=precip-precip.shift(1)
+    precip_incr[0]=0
+    precip_incr[-1]=0
     #Smooth data in forward direction
     print("  smoothing data in forward direction; may take a minute")
     smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
@@ -325,7 +334,56 @@ def smooth_precip_Nayak2010(precip_cumulative):
     smooth_incr_precip=dat2['avg'].values #overwrite old precip column with new smoothed values
     
     #Re-sum cumulative timeseries
+
     new_cumulative=calculate_cumulative(precip_cumulative, smooth_incr_precip)
+    
+    return(new_cumulative)    
+    
+    
+def smooth_precip_Nayak2010_broken(precip_cumulative):
+    '''
+    Routine for smoothing precipitation data from Nayak 2010 thesis/ 2008 paper.
+    Returns dataframe with smoothed precip column (overwrites existing column)
+      -relies on inner_precip_smoothing_func_Nayak2010, as included above in this module
+    -----
+    precip_cumulative: pandas series of data to smooth
+    '''
+    
+    precip_copy=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
+    precip_incr=precip_copy-precip_copy.shift(1)
+    precip_incr[0]=0 #set first and last values to 0
+    precip_incr[-1]=0
+    #Smooth data in forward direction
+    print("  smoothing data in forward direction; may take a minute")
+    smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
+    #Smooth Data in backwards direction
+    reverse_sorted_data=precip_incr.copy().sort_index(ascending=False).values
+    print("  smoothing data in reverse direction; may take a minute")
+    smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
+    smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
+
+    #Average
+    smooth_forward.index=precip_cumulative.index #Reindex in order to add back to original dataframe
+    smooth_backwards.index=precip_cumulative.index #Reindex in order to add back to original dataframe
+    
+    dat2=pd.DataFrame()
+    dat2['smooth_forward']=smooth_forward      #re-combine into single dataframe
+    dat2['smooth_backwards']=smooth_backwards
+    dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1)
+    
+    #If first 3 values <0, set to 0. Same with end and last incremental 3 values.
+    for ii in range(-3,0):
+        if dat2.ix[ii, 'avg']<0:
+            dat2.ix[ii, 'avg']=0
+    for ii in range(0,3):
+        if dat2.ix[ii, 'avg']<0:
+            dat2.ix[ii, 'avg']=0   
+    
+    #New smooth precip data
+    smooth_incr_precip=dat2['avg'] #overwrite old precip column with new smoothed values
+    
+    #Re-sum cumulative timeseries
+    new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=smooth_incr_precip)
     
     return(new_cumulative)
     
