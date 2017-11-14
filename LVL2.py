@@ -21,6 +21,6 @@ def vector_average_wind_direction(WS, WD):
     if mean_WD<0:
         mean_WD=mean_WD+180       
     return(mean_WD)
-    
+        
 
     
