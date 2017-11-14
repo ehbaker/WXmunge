@@ -21,20 +21,22 @@ TAspirated2	4/25/2014 6:45	9/4/2014 9:00	 switch_label	   TPassive2	     Wolveri
 Tpassive1   	5/7/2013 2:15	   11/6/2013 8:00 	bad		       NAN            Wolverine990
 
     '''
-    for index, row in bad_sensor_dates_dat.iterrows():
-        if row['Action']=='bad':
-            Start_Date=row['Start_Date']
-            End_Date=row['End_Date']
-            Sensor=row['Sensor']
-            dat.loc[Start_Date:End_Date, Sensor]=np.nan #For dates in this range, set sensor "Sensor" to NAN
-        elif row['Action']=='switch_label':
-            Start_Date=row['Start_Date']
-            End_Date=row['End_Date']
-            Sensor=row['Sensor']
-            Correct_Label=row['Correct_Label']
+    for xx in bad_sensor_dates_dat.index:
+    #If sensor data is bad, set to NAN
+        if bad_sensor_dates_dat.loc[xx,'Action']=='bad':
+            Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
+            End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
+            Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
+            dat.loc[Start_Date:End_Date, Sensor]=np.nan
+        #If sensor is mislabeled, switch label for indicated time period
+        elif bad_sensor_dates_dat.loc[xx,'Action']=='switch_label':
+            Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
+            End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
+            Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
+            Correct_Label=bad_sensor_dates_dat.loc[xx, 'Correct_Label']
             dat.loc[Start_Date:End_Date, Correct_Label]=dat.loc[Start_Date:End_Date, Sensor] #put data in correctly labeled column
-            dat.loc[Start_Date:End_Date, Sensor]=np.nan#change the original location to NAN (no data was collected from this sensor)    
-            return(dat)
+            dat.loc[Start_Date:End_Date, Sensor]=np.nan #change the original location to NAN (no data was collected from this sensor)
+    return(dat)
             
 def remove_error_temperature_values(temps, low_temp_cutoff, high_temp_cutoff):
     '''
@@ -148,9 +150,20 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
     precip_cumulative=precip_cumulative_og.copy()
     precip_cumulative=precip_cumulative.reindex() #reset index to integers from time
     precip_incremental=precip_cumulative-precip_cumulative.shift(1)
+    flag='good' #create initial value for flag
+    counter=0 #used to skip over iterations in outer loop which have already been edited by inner
+
     for ii in range(1, len(precip_incremental)):
         start_noise=np.nan
         end_noise=np.nan
+        if flag=='skip_iteration': #this skips a single iteration if a single value has been edited
+            print('     skipping iteration' + str(precip_incremental.index[ii]))
+            flag='good' #reset flag
+            continue
+        if counter>0: #this part skips as many iterations as have been edited below
+            counter=counter-1
+            print("SKIPPING " + str(precip_incremental.index[ii]))
+            continue
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
             print("noise starts at "+ str(precip_incremental.index[ii])+ " ; " + str(ii))
@@ -165,6 +178,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       Dy=precip_cumulative[end_noise]-precip_cumulative[start_noise]
                       precip_incremental[jj]=Dy/2
                       precip_incremental[jj+1]=Dy/2#[jj:jj+2] selects 2 values (jj and jj+1) only
+                      flag='skip_iteration' #need to skip next iteration of outer loop (altered precip[ii+1])
                       break #continue outer loop
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])<bucket_fill_drain_cutoff:    #if issue is noise
                       #precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
@@ -173,16 +187,15 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       dx=(end_noise)-(start_noise+1)+1
                       precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
                       print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
+                      counter=len(precip_incremental[start_noise+1:end_noise+1])
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
                       precip_incremental[start_noise+1:end_noise+1] =0 #no incremental precip occurs during bucket drain or refill
-                      print("     removed gage maintenance at  " + str(precip_incremental[start_noise+1]) + ":" +str(precip_incremental[end_noise]))
+                      print("     removed gage maintenance at  " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                   break #this simple exits the inner loop, continuing the outer
                   
             
     #print("recalculating cumulative")
-    new_cumulative=precip_incremental.cumsum()
-    new_cumulative=new_cumulative + precip_cumulative[0]
-    new_cumulative[0]=precip_cumulative[0]
+    new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_cumulative_og, incremental_vals=precip_incremental)
     new_cumulative.reindex_like(precip_cumulative_og) #reset index to time
     return(new_cumulative)
                     
@@ -411,8 +424,17 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
         
     #Calculate cumulative sum of incremental values
     new_cumulative=incremental_vals.cumsum()
-    new_cumulative = new_cumulative + cumulative_vals_old[0] 
-    new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+    
+    #Adjust so begins as same absolute value as input
+    if not np.isnan(cumulative_vals_old[0]):
+        start_value=cumulative_vals_old[0]
+        new_cumulative = new_cumulative + start_value
+        new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+    #If data begins with NANs, must adjust based on first valid value, not first value
+    else:
+        start_data_index=cumulative_vals_old.first_valid_index()
+        start_value=cumulative_vals_old[start_data_index]
+        new_cumulative=new_cumulative+start_value
     return(new_cumulative)
     
 def plot_comparrison(df_old, df_new, data_col_name, label_old='original', label_new='new'):
