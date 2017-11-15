@@ -162,7 +162,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
             continue
         if counter>0: #this part skips as many iterations as have been edited below
             counter=counter-1
-            print("SKIPPING " + str(precip_incremental.index[ii]))
+            #print("SKIPPING " + str(precip_incremental.index[ii]))
             continue
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
@@ -315,8 +315,8 @@ def smooth_precip_Nayak2010(precip_cumulative):
     
     precip=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
     precip_incr=precip-precip.shift(1)
-    precip_incr[0]=0
-    precip_incr[-1]=0
+    #precip_incr[0]=0
+    #precip_incr[-1]=0
     #Smooth data in forward direction
     print("  smoothing data in forward direction; may take a minute")
     smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
@@ -333,8 +333,8 @@ def smooth_precip_Nayak2010(precip_cumulative):
     dat2=pd.DataFrame()
     dat2['smooth_forward']=smooth_forward      #re-combine into single dataframe
     dat2['smooth_backwards']=smooth_backwards
-    dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1)
-    
+    dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1, skipna=False)
+        
     #If first 3 values <0, set to 0. Same with end and last incremental 3 values.
     for ii in range(-3,0):
         if dat2.ix[ii, 'avg']<0:
@@ -342,63 +342,64 @@ def smooth_precip_Nayak2010(precip_cumulative):
     for ii in range(0,3):
         if dat2.ix[ii, 'avg']<0:
             dat2.ix[ii, 'avg']=0   
-    
-    #New smooth precip data
-    smooth_incr_precip=dat2['avg'].values #overwrite old precip column with new smoothed values
-    
-    #Re-sum cumulative timeseries
 
-    new_cumulative=calculate_cumulative(precip_cumulative, smooth_incr_precip)
-    
-    return(new_cumulative)    
-    
-    
-def smooth_precip_Nayak2010_broken(precip_cumulative):
-    '''
-    Routine for smoothing precipitation data from Nayak 2010 thesis/ 2008 paper.
-    Returns dataframe with smoothed precip column (overwrites existing column)
-      -relies on inner_precip_smoothing_func_Nayak2010, as included above in this module
-    -----
-    precip_cumulative: pandas series of data to smooth
-    '''
-    
-    precip_copy=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
-    precip_incr=precip_copy-precip_copy.shift(1)
-    precip_incr[0]=0 #set first and last values to 0
-    precip_incr[-1]=0
-    #Smooth data in forward direction
-    print("  smoothing data in forward direction; may take a minute")
-    smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
-    #Smooth Data in backwards direction
-    reverse_sorted_data=precip_incr.copy().sort_index(ascending=False).values
-    print("  smoothing data in reverse direction; may take a minute")
-    smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
-    smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
-
-    #Average
-    smooth_forward.index=precip_cumulative.index #Reindex in order to add back to original dataframe
-    smooth_backwards.index=precip_cumulative.index #Reindex in order to add back to original dataframe
-    
-    dat2=pd.DataFrame()
-    dat2['smooth_forward']=smooth_forward      #re-combine into single dataframe
-    dat2['smooth_backwards']=smooth_backwards
-    dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1)
-    
-    #If first 3 values <0, set to 0. Same with end and last incremental 3 values.
-    for ii in range(-3,0):
-        if dat2.ix[ii, 'avg']<0:
-            dat2.ix[ii, 'avg']=0
-    for ii in range(0,3):
-        if dat2.ix[ii, 'avg']<0:
-            dat2.ix[ii, 'avg']=0   
-    
     #New smooth precip data
     smooth_incr_precip=dat2['avg'] #overwrite old precip column with new smoothed values
     
+    
+    
     #Re-sum cumulative timeseries
     new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=smooth_incr_precip)
-    
+    print("UGHyeahblergh")
     return(new_cumulative)
+    
+    
+#def smooth_precip_Nayak2010_broken(precip_cumulative):
+#    '''
+#    Routine for smoothing precipitation data from Nayak 2010 thesis/ 2008 paper.
+#    Returns dataframe with smoothed precip column (overwrites existing column)
+#      -relies on inner_precip_smoothing_func_Nayak2010, as included above in this module
+#    -----
+#    precip_cumulative: pandas series of data to smooth
+#    '''
+#    
+#    precip_copy=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
+#    precip_incr=precip_copy-precip_copy.shift(1)
+#    #precip_incr[0]=0 #set first and last values to 0
+#    #precip_incr[-1]=0
+#    #Smooth data in forward direction
+#    print("  smoothing data in forward direction; may take a minute")
+#    smooth_forward=inner_precip_smoothing_func_Nayak2010(precip_incr.values)
+#    #Smooth Data in backwards direction
+#    reverse_sorted_data=precip_incr.copy().sort_index(ascending=False).values
+#    print("  smoothing data in reverse direction; may take a minute")
+#    smooth_backwards=inner_precip_smoothing_func_Nayak2010(reverse_sorted_data)
+#    smooth_backwards=smooth_backwards[::-1] #sort forwards again, so in the correct order to store in dataframe
+#
+#    #Average
+#    smooth_forward.index=precip_cumulative.index #Reindex in order to add back to original dataframe
+#    smooth_backwards.index=precip_cumulative.index #Reindex in order to add back to original dataframe
+#    
+#    dat2=pd.DataFrame()
+#    dat2['smooth_forward']=smooth_forward      #re-combine into single dataframe
+#    dat2['smooth_backwards']=smooth_backwards
+#    dat2['avg']=dat2[['smooth_forward', 'smooth_backwards']].mean(axis=1)
+#    
+#    #If first 3 values <0, set to 0. Same with end and last incremental 3 values.
+#    for ii in range(-3,0):
+#        if dat2.ix[ii, 'avg']<0:
+#            dat2.ix[ii, 'avg']=0
+#    for ii in range(0,3):
+#        if dat2.ix[ii, 'avg']<0:
+#            dat2.ix[ii, 'avg']=0   
+#    
+#    #New smooth precip data
+#    #smooth_incr_precip=dat2['avg'] #overwrite old precip column with new smoothed values
+#    
+#    #Re-sum cumulative timeseries
+#    #new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=smooth_incr_precip)
+#    
+#    return(smooth_backwards)
     
 def rename_pandas_columns_for_plotting(data_o, desired_columns, append_text):
     '''
