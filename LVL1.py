@@ -5,9 +5,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def isthisworking(): #This is here simply to trouble-shoot importing of the module
-    print("Yes it is! Successful import! YAYYYYY!")
-    
 def remove_malfunctioning_sensor_data(dat, bad_sensor_dates_dat):
     '''
     Function to set bad sensor data to NAN, during specified timeframes. Returns dataframe with NANs in place, and switched values, as indicated with "switch_label"
@@ -86,30 +83,54 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
     return(new_precip_cumulative)
 
 
-def precip_remove_obvious_sensor_malfunctions(precip_cumulative, obvious_error_precip_cutoff, noise_cutoff):
-    precip_edit=precip_cumulative.copy()
-    #Step 1 : use incremental precip to set sensor malfunction jumps to NAN in incremental timeseres
-    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
-   
-    #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps)
-    for ii in range(2, len(dPrecip)):
-    #If sum of 3 values in a row have a value > cutoff, set all 3 to 0
-        if abs(dPrecip[ii-2])+abs(dPrecip[ii-1])+abs(dPrecip[ii])>obvious_error_precip_cutoff:
-            dPrecip[ii-2:ii+1]=0
-            #print("removed at " + str(ii-2)+ ":" + str(ii))
-    
-    #Set locations where a single value is > 30 cm change to 0
-    for ii in range(0, len(dPrecip)): #remove places where a single value is > 30 cm change
-        if abs(dPrecip[ii])>obvious_error_precip_cutoff:
-            dPrecip.iloc[ii]=0
-            #print("removed at " + str(ii))
-            
-        #Remove noise; where change is bigger than a given noise cutoff
-        if abs(dPrecip[ii])>noise_cutoff:
-            dPrecip.iloc[ii]=0 #remove noise
+#def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff):
+#    precip_edit=precip_cumulative.copy()
+#    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
+#
+#    #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps; generally under an hour however)
+#    counter=0
+#    for ii in range(2, len(dPrecip)):
+#        if counter>0:
+#            counter=counter-1
+#            continue #skip iteration of loop if dPrecip already modified below
+#    #If jump in initial precip series is over the cutoff
+#        if abs(precip_edit[ii]-precip_edit[ii-2])>obvious_error_precip_cutoff:
+#            print("PROBLEM!" + str(dPrecip.index.date[ii-2]))
+#            #Find end of the filling event; when > 20 incremental values in a row are less than 2 cm
+#            for xx in range(ii, ii+30):               
+#                if (dPrecip[xx: xx+20]<(2)).all():
+#                    dPrecip[ii-2:xx+1]=0
+#                    print("Gage Drain/ Fill Event on " + str(dPrecip.index.date[ii-2]))
+#                    print("found the end - removed at " + str(dPrecip.index[ii-2])+ ":" + "until" + str(dPrecip.index[xx]))
+#                    break #continue to outer loop
+#                else:
+#                    print('continuing')
+#                    counter=counter+1
+#                    continue
+#                    
+#    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
+#    return(new_cumulative)
 
-    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=dPrecip)
+def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff, n_cut):
+    precip_edit=precip_cumulative.copy()
+    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
+    
+    #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps)
+    counter=0
+    for ii in range(1+n_cut, len(dPrecip)-n_cut):
+        if counter>0:
+            counter=counter-1
+            continue
+    #If sum of 3 values in a row have a value > cutoff, set all 3 to 0
+        if abs(dPrecip[ii-1]+dPrecip[ii]+dPrecip[ii+1])>obvious_error_precip_cutoff:
+            dPrecip[ii-n_cut:ii+n_cut+1]=0
+            print("Gage Drain/ Fill Event on " + str(dPrecip.index.date[ii]))
+            #print("    JUMP from " +str(precip_edit[ii-n_cut]) + " to " + str(precip_edit[ii+n_cut+1]))
+            counter=n_cut
+
+    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
     return(new_cumulative)
+
 
 def precip_remove_daily_outliers(precip_cumulative, n=96):
     precip_edit=precip_cumulative.copy()
@@ -129,7 +150,7 @@ def precip_interpolate_gaps_under1day(precip_cumulative, n=96):
     
 def precip_remove_maintenance_noise(precip_cumulative, obvious_error_precip_cutoff, noise_cutoff):
     '''
-    returns incremental precip
+    returns cumulative precip w/o fill and drain events
     '''
     precip_edit=precip_cumulative.copy()
     dPrecip=precip_edit -precip_edit.shift(1) #incremental precip
@@ -157,7 +178,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
         start_noise=np.nan
         end_noise=np.nan
         if flag=='skip_iteration': #this skips a single iteration if a single value has been edited
-            print('     skipping iteration' + str(precip_incremental.index[ii]))
+            #print('     skipping iteration' + str(precip_incremental.index[ii]))
             flag='good' #reset flag
             continue
         if counter>0: #this part skips as many iterations as have been edited below
@@ -166,7 +187,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
             continue
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
-            print("noise starts at "+ str(precip_incremental.index[ii])+ " ; " + str(ii))
+            #print("noise starts at "+ str(precip_incremental.index[ii])+ " ; " + str(ii))
             for jj in range(ii, len(precip_incremental)):
                 newslice=precip_incremental[jj+1:jj+n_forward_noise_free+1] #slice of N values forward from location noise identified
                 if (abs(newslice)>noise).any():
@@ -174,7 +195,7 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                 if(abs(newslice)<noise).all():
                   end_noise=jj+1 #jj is still a noisy value that should be replaced
                   if ii==jj:
-                      print("     single value removed at " + str(precip_incremental.index[jj]))
+                      #print("     single value removed at " + str(precip_incremental.index[jj]))
                       Dy=precip_cumulative[end_noise]-precip_cumulative[start_noise]
                       precip_incremental[jj]=Dy/2
                       precip_incremental[jj+1]=Dy/2#[jj:jj+2] selects 2 values (jj and jj+1) only
@@ -186,11 +207,11 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       dY=precip_cumulative[end_noise] - precip_cumulative[start_noise]
                       dx=(end_noise)-(start_noise+1)+1
                       precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
-                      print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
+                      #print("     interpolated noise at locations " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                       counter=len(precip_incremental[start_noise+1:end_noise+1])
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])>bucket_fill_drain_cutoff: # if issue is gage maintenance
                       precip_incremental[start_noise+1:end_noise+1] =0 #no incremental precip occurs during bucket drain or refill
-                      print("     removed gage maintenance at  " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
+                      #print("     removed gage maintenance at  " + str(precip_incremental.index[start_noise+1]) + ":" +str(precip_incremental.index[end_noise]))
                   break #this simple exits the inner loop, continuing the outer
                   
             
@@ -251,7 +272,9 @@ def basic_median_outlier_strip(vals_orig, k, threshold):
     outlier_idx=difference>threshold
     dVals[outlier_idx]=0 #set incremental change at index where cumulative is out of range to 0
     #vals[outlier_idx]=np.nan # this was used when a cumulative timeseries was returned; keeping for future possible edits
-    return(dVals)
+    
+    new_cum=calculate_cumulative(cumulative_vals_orig=vals, incremental_vals=dVals)
+    return(new_cum)
     
 
 def inner_precip_smoothing_func_Nayak2010(precip):
@@ -350,7 +373,6 @@ def smooth_precip_Nayak2010(precip_cumulative):
     
     #Re-sum cumulative timeseries
     new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_cumulative, incremental_vals=smooth_incr_precip)
-    print("UGHyeahblergh")
     return(new_cumulative)
     
     
@@ -442,3 +464,25 @@ def plot_comparrison(df_old, df_new, data_col_name, label_old='original', label_
     ax=df_old[data_col_name].plot(label=label_old, title=df_old[data_col_name].name, color='red')
     df_new[data_col_name].plot(color='blue', ax=ax, label=label_new)
     plt.legend()
+
+
+def vector_average_wind_direction(WS, WD):
+    '''
+    Calculate vector-average wind direction from wind direction (0-360) and wind speed.
+    WS -  wind speed in m/s
+    WD - vector of  wind direction in degrees (0-360)
+    
+    Should only be used if instrument not already recording vector-average wind direction
+    
+    Output is a single number - vector averagae wind direction during the period of input data
+    ''' 
+    #Calculate Vector Mean Wind Direction
+    WS=WS.astype(np.float64)
+    WD=WD.astype(np.float64)
+    V_east = np.mean(WS * np.sin(WD * (np.pi/180)))
+    V_north = np.mean(WS * np.cos(WD * (np.pi/180)))
+    mean_WD = np.arctan2(V_east, V_north) * (180/np.pi)
+    #Translate output range from -180 to +180 to 0-360.
+    if mean_WD<0:
+        mean_WD=mean_WD+360       
+    return(mean_WD)
