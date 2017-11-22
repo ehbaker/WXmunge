@@ -450,9 +450,13 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
     
     #Adjust so begins as same absolute value as input
     if not np.isnan(cumulative_vals_old[0]):
+        if cumulative_vals_orig.isnull().any():
+            print("STOP! Series contains NANs, which will result in unintended jumps in cumulative timeseries!")
+            print("NANs at " +str(cumulative_vals_old.index[cumulative_vals_old.isnull()]))
         start_value=cumulative_vals_old[0]
         new_cumulative = new_cumulative + start_value
         new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+        
     #If data begins with NANs, must adjust based on first valid value, not first value
     else:
         start_data_index=cumulative_vals_old.first_valid_index()
