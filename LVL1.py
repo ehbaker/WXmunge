@@ -188,7 +188,8 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
         if abs(precip_incremental[ii])>noise:
             start_noise=ii-1 #mark value before error
             #print("noise starts at "+ str(precip_incremental.index[ii])+ " ; " + str(ii))
-            for jj in range(ii, len(precip_incremental)):
+            for jj in range(ii, len(precip_incremental)-n_forward_noise_free):
+                #print(jj)
                 newslice=precip_incremental[jj+1:jj+n_forward_noise_free+1] #slice of N values forward from location noise identified
                 if (abs(newslice)>noise).any():
                     continue #additional noise is present in new slice; get new slice with subsequent loop iteration
@@ -202,8 +203,8 @@ def precip_remove_high_frequency_noiseNayak2010(precip_cumulative_og, noise, buc
                       flag='skip_iteration' #need to skip next iteration of outer loop (altered precip[ii+1])
                       break #continue outer loop
                   if abs(precip_cumulative[end_noise]-precip_cumulative[start_noise])<bucket_fill_drain_cutoff:    #if issue is noise
-                      #precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
-                      #precip_cumulative[start_noise+1: end_noise]=np.nan
+                      precip_incremental[start_noise+1: end_noise]=np.nan #this does not change val @ end_noise
+                      precip_cumulative[start_noise+1: end_noise]=np.nan
                       dY=precip_cumulative[end_noise] - precip_cumulative[start_noise]
                       dx=(end_noise)-(start_noise+1)+1
                       precip_incremental[start_noise+1: end_noise+1]=dY/dx #linear interpolation
