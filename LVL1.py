@@ -258,7 +258,7 @@ def hampel(vals_orig, k=7, t0=3):
     vals[outlier_idx]=rolling_median
     return(vals)
     
-def basic_median_outlier_strip(vals_orig, k, threshold):
+def basic_median_outlier_strip(vals_orig, k, threshold, min_n_for_val=3):
     '''
     vals: pandas series of initial cumulative values
     k: window size
@@ -267,15 +267,12 @@ def basic_median_outlier_strip(vals_orig, k, threshold):
     RETURNS: series of instantaneous change values 
     '''
     vals=vals_orig.copy()
-    dVals=vals-vals.shift(1)
-    rolling_median=vals.rolling(k).median()
+    rolling_median=vals.rolling(k, min_periods=min_n_for_val, center=True).median() #center=True keeps label on center value
     difference=np.abs(rolling_median-vals)
     outlier_idx=difference>threshold
-    dVals[outlier_idx]=0 #set incremental change at index where cumulative is out of range to 0
-    #vals[outlier_idx]=np.nan # this was used when a cumulative timeseries was returned; keeping for future possible edits
+    vals[outlier_idx]=rolling_median #set incremental change at index where cumulative is out of range to 0
     
-    new_cum=calculate_cumulative(cumulative_vals_orig=vals, incremental_vals=dVals)
-    return(new_cum)
+    return(vals)
     
 
 def inner_precip_smoothing_func_Nayak2010(precip):
