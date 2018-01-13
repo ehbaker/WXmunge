@@ -114,7 +114,7 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
 def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff, n_cut):
     precip_edit=precip_cumulative.copy()
     dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
-    
+    print("WORKING")
     #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps)
     counter=0
     for ii in range(1+n_cut, len(dPrecip)-n_cut):
@@ -129,6 +129,15 @@ def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff,
             counter=n_cut
 
     new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
+    return(new_cumulative)
+
+
+def precip_remove_drain_and_fill_vectorized(precip_cumulative, obvious_error_precip_cutoff, n_cut):
+    precip_edit=precip_cumulative.copy()
+    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
+    dPrecip[dPrecip.rolling(n_cut).sum()>obvious_error_precip_cutoff]=np.nan
+    new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
+
     return(new_cumulative)
 
 
@@ -442,24 +451,27 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
     '''
     #Original values in cumulative series
     cumulative_vals_old=cumulative_vals_orig.copy()
-        
+    
+    #Save original incremental values (for NAN locations)
+    incremental_vals_orig=incremental_vals.copy()
+    
+    incremental_vals[incremental_vals.isnull()]=0
+    
     #Calculate cumulative sum of incremental values
     new_cumulative=incremental_vals.cumsum()
     
     #Adjust so begins as same absolute value as input
     if not np.isnan(cumulative_vals_old[0]):
-        if cumulative_vals_orig.isnull().any():
-            print("STOP! Series contains NANs, which will result in unintended jumps in cumulative timeseries!")
-            print("NANs at " +str(cumulative_vals_old.index[cumulative_vals_old.isnull()]))
         start_value=cumulative_vals_old[0]
         new_cumulative = new_cumulative + start_value
-        new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+        new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is always a NAN
         
     #If data begins with NANs, must adjust based on first valid value, not first value
     else:
         start_data_index=cumulative_vals_old.first_valid_index()
         start_value=cumulative_vals_old[start_data_index]
         new_cumulative=new_cumulative+start_value
+        new_cumulative[incremental_vals_orig.isnull()]=np.nan #replace original NANs
     return(new_cumulative)
     
 def plot_comparrison(df_old, df_new, data_col_name, label_old='original', label_new='new'):
