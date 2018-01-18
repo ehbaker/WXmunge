@@ -24,6 +24,7 @@ Tpassive1   	5/7/2013 2:15	   11/6/2013 8:00 	bad		       NAN            Wolveri
             Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
             End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
             Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
+            #print(str(Start_Date) + " " + Sensor)
             dat.loc[Start_Date:End_Date, Sensor]=np.nan
         #If sensor is mislabeled, switch label for indicated time period
         elif bad_sensor_dates_dat.loc[xx,'Action']=='switch_label':
@@ -111,35 +112,27 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
 #    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
 #    return(new_cumulative)
 
-def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff, n_cut):
-    precip_edit=precip_cumulative.copy()
-    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
-    print("WORKING")
-    #Set locations where sum of 3 sequential values > the precip refill error limit to 0 (some refills span several timesteps)
-    counter=0
-    for ii in range(1+n_cut, len(dPrecip)-n_cut):
-        if counter>0:
-            counter=counter-1
-            continue
-    #If sum of 3 values in a row have a value > cutoff, set all 3 to 0
-        if abs(dPrecip[ii-1]+dPrecip[ii]+dPrecip[ii+1])>obvious_error_precip_cutoff:
-            dPrecip[ii-n_cut:ii+n_cut+1]=0
-            print("Gage Drain/ Fill Event on " + str(dPrecip.index.date[ii]))
-            #print("    JUMP from " +str(precip_edit[ii-n_cut]) + " to " + str(precip_edit[ii+n_cut+1]))
-            counter=n_cut
-
-    new_cumulative= calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
+def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff, n_window):
+    '''
+    function to remove drain/ fill events from cumulative precipitation record. Returns cumulative timeseries of precip w/ NANs as placed in original
+    
+    precip_cumulative: pandas series of cumulative precipitation
+    obvious_error_precip_cutoff: cutoff for sum of 3 consecutive values, if over, represents a drain/ fill event
+    n_window: size of window
+    '''
+    filled=precip_cumulative.interpolate()
+    dPrecip=filled-filled.shift(1)
+    #rolling_sum=dPrecip.abs().rolling(n_window, center=True).sum()
+    rolling_sum=abs(dPrecip.rolling(n_window, center=True).sum())
+    error_center=rolling_sum>obvious_error_precip_cutoff
+    for xx in range(n_window*-1,n_window+1):
+        #print("fixing errors at error + "+ str(xx))
+        select_boolean_ser=error_center.shift(xx)
+        select_boolean_ser[0:n_window]=False #set first and last xx vals to false (otherwise NAN)
+        select_boolean_ser[n_window*-1:]=False
+        dPrecip[select_boolean_ser]=0 #set incremental precip @ these timesteps surrounding problem to 0 as well
+    new_cumulative=calculate_cumulative(precip_cumulative, dPrecip)
     return(new_cumulative)
-
-
-def precip_remove_drain_and_fill_vectorized(precip_cumulative, obvious_error_precip_cutoff, n_cut):
-    precip_edit=precip_cumulative.copy()
-    dPrecip=precip_edit -precip_edit.shift(1) #create incremental precip timeseries
-    dPrecip[dPrecip.rolling(n_cut).sum()>obvious_error_precip_cutoff]=np.nan
-    new_cumulative=calculate_cumulative(cumulative_vals_orig=precip_edit, incremental_vals=dPrecip)
-
-    return(new_cumulative)
-
 
 def precip_remove_daily_outliers(precip_cumulative, n=96):
     precip_edit=precip_cumulative.copy()
@@ -444,7 +437,7 @@ def rename_pandas_columns_for_plotting(data_o, desired_columns, append_text):
     df=df.add_suffix(append_text)
     return(df)
 
-def calculate_cumulative(cumulative_vals_orig, incremental_vals):
+def calculate_cumulative_newVersion_bad(cumulative_vals_orig, incremental_vals):
     '''
     function to calculate cumulative timeseries from two things: an input (edited) incremental series, and the original cumulative series.
 
@@ -473,11 +466,69 @@ def calculate_cumulative(cumulative_vals_orig, incremental_vals):
         new_cumulative=new_cumulative+start_value
         new_cumulative[incremental_vals_orig.isnull()]=np.nan #replace original NANs
     return(new_cumulative)
+ 
+def calculate_cumulative_old_nanProbs(cumulative_vals_orig, incremental_vals):
+    '''
+    function to calculate cumulative timeseries from two things: an input (edited) incremental series, and the original cumulative series.
+    '''
+    #Original values in cumulative series
+    cumulative_vals_old=cumulative_vals_orig.copy()
+        
+    #Calculate cumulative sum of incremental values
+    new_cumulative=incremental_vals.cumsum()
     
+    #Adjust so begins as same absolute value as input
+    if not np.isnan(cumulative_vals_old[0]):
+        if cumulative_vals_orig.isnull().any():
+            print("STOP! Series contains NANs, which will result in unintended jumps in cumulative timeseries!")
+            print("NANs at " +str(cumulative_vals_old.index[cumulative_vals_old.isnull()]))
+        start_value=cumulative_vals_old[0]
+        new_cumulative = new_cumulative + start_value
+        new_cumulative[0]=cumulative_vals_old[0] #needed, as first value of incremental series is a NAN
+        
+    #If data begins with NANs, must adjust based on first valid value, not first value
+    else:
+        start_data_index=cumulative_vals_old.first_valid_index()
+        start_value=cumulative_vals_old[start_data_index]
+        new_cumulative=new_cumulative+start_value
+    return(new_cumulative)   
+    
+def calculate_cumulative(cumulative_vals_orig, incremental_vals):
+    '''
+    function to calculate cumulative timeseries from two things: an input (edited) incremental series, and the original cumulative series.
+    -interpolates any missing values, and re-adds those back to the timeseries at the end
+    '''
+    #Original values in cumulative series
+    cumulative_vals=cumulative_vals_orig.copy()
+    
+    #store location of NANs in original timeseries
+    nan_locations=cumulative_vals.isnull()
+    #Calculate cumulative sum of incremental values
+    new_cumulative=incremental_vals.cumsum()
+    
+    #Adjust so begins as same absolute value as input
+    if not np.isnan(cumulative_vals[0]):
+        start_value=cumulative_vals[0]
+        new_cumulative = new_cumulative + start_value
+        new_cumulative[0]=cumulative_vals[0] #needed, as first value of incremental series is a NAN
+        
+    #If data begins with NANs, must adjust based on first valid value, not first value
+    else:
+        start_data_index=cumulative_vals.first_valid_index()
+        start_value=cumulative_vals[start_data_index]
+        new_cumulative=new_cumulative+start_value
+        
+    #put NANs back in cumulative timeseries
+    new_cumulative[nan_locations]=pd.np.nan
+    return(new_cumulative)   
+
+
 def plot_comparrison(df_old, df_new, data_col_name, label_old='original', label_new='new'):
     ax=df_old[data_col_name].plot(label=label_old, title=df_old[data_col_name].name, color='red')
     df_new[data_col_name].plot(color='blue', ax=ax, label=label_new)
     plt.legend()
+    
+#def calculate_cumulative(cumulative_vals_orig, incremental_vals):
 
 
 def vector_average_wind_direction(WS, WD):
@@ -500,3 +551,24 @@ def vector_average_wind_direction(WS, WD):
     if mean_WD<0:
         mean_WD=mean_WD+360       
     return(mean_WD)
+    
+def vector_average_wind_direction_individual_timestep(WS, WD):
+    '''
+    Calculate vector-average wind direction from wind direction (0-360) and wind speed.
+    WS -  wind speed in m/s
+    WD - vector of  wind direction in degrees (0-360)
+    
+    Should only be used if instrument not already recording vector-average wind direction
+    
+    Output is a single number - vector averagae wind direction during the period of input data
+    ''' 
+    #Calculate Vector Mean Wind Direction
+    WS=WS.astype(np.float64)
+    WD=WD.astype(np.float64)
+    V_east = WS * np.sin(WD * (np.pi/180))
+    V_north = WS * np.cos(WD * (np.pi/180))
+    mean_WD = np.arctan2(V_east, V_north) * (180/np.pi)
+    #Translate output range from -180 to +180 to 0-360.
+    mean_WD[mean_WD<0]=mean_WD[mean_WD<0]+360       
+    return(mean_WD)    
+
