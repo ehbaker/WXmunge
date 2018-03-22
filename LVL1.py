@@ -24,7 +24,7 @@ Tpassive1   	5/7/2013 2:15	   11/6/2013 8:00 	bad		       NAN            Wolveri
             Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
             End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
             Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
-            #print(str(Start_Date) + " " + Sensor)
+            print(str(Start_Date) + " " + str(End_Date) + " " + Sensor)
             dat.loc[Start_Date:End_Date, Sensor]=np.nan
         #If sensor is mislabeled, switch label for indicated time period
         elif bad_sensor_dates_dat.loc[xx,'Action']=='switch_label':
@@ -34,6 +34,18 @@ Tpassive1   	5/7/2013 2:15	   11/6/2013 8:00 	bad		       NAN            Wolveri
             Correct_Label=bad_sensor_dates_dat.loc[xx, 'Correct_Label']
             dat.loc[Start_Date:End_Date, Correct_Label]=dat.loc[Start_Date:End_Date, Sensor] #put data in correctly labeled column
             dat.loc[Start_Date:End_Date, Sensor]=np.nan #change the original location to NAN (no data was collected from this sensor)
+            
+        elif bad_sensor_dates_dat.loc[xx,'Action']=='correct':
+            Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
+            End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
+            Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
+            Value_to_add=bad_sensor_dates_dat.loc[xx, 'Correct_Label']
+            print("adding "+ str(Value_to_add)+ " to " + Sensor + " at " + str(Start_Date))
+            if End_Date=='end':
+                dat.loc[Start_Date:, Sensor]=dat.loc[Start_Date:, Sensor]+ Value_to_add
+            else:
+                dat.loc[Start_Date:End_Date, Sensor]=dat.loc[Start_Date:End_Date, Sensor]+ Value_to_add
+          
     return(dat)
             
 def remove_error_temperature_values(temps, low_temp_cutoff, high_temp_cutoff):
@@ -65,7 +77,7 @@ def remove_error_precip_values_old(precip_cumulative, obvious_error_precip_cutof
             precip_edit[ii]=np.nan
     
     #Step2: remove remaining outliers using one-day (96 samples) median filter
-    rolling_median=precip_edit.rolling(96).median().fillna(method='ffill').fillna(method='bfill')
+    rolling_median=precip_edit.rolling(96, center=True).median().fillna(method='ffill').fillna(method='bfill')
     difference=np.abs(precip_edit - rolling_median)
     threshold=0.2 #threshold for difference between median and the given value
     outlier_idx=difference>threshold
@@ -137,7 +149,7 @@ def precip_remove_drain_and_fill(precip_cumulative, obvious_error_precip_cutoff,
 def precip_remove_daily_outliers(precip_cumulative, n=96):
     precip_edit=precip_cumulative.copy()
     #Step2: remove remaining outliers using one-day (96 samples for 15 min data) median filter
-    rolling_median=precip_edit.rolling(n).median().fillna(method='ffill').fillna(method='bfill')
+    rolling_median=precip_edit.rolling(n, center=True).median().fillna(method='ffill').fillna(method='bfill')
     difference=np.abs(precip_edit - rolling_median)
     threshold=0.2 #threshold for difference between median and the given value
     outlier_idx=difference>threshold
@@ -246,15 +258,15 @@ def hampel(vals_orig, k=7, t0=3):
     '''
     vals: pandas series of values from which to remove outliers
     k: size of window (including the sample; 7 is equal to 3 on either side of value, which is the default in Matlab's implmentation)
-    t0= number of standard deviations before replacing; default = 3
+    t0= number of median absolute deviations before replacing; default = 3
     '''
     #Make copy so original not edited
     vals=vals_orig.copy()    
     #Hampel Filter
     L= 1.4826
-    rolling_median=vals.rolling(k).median()
+    rolling_median=vals.rolling(k, center=True).median()
     difference=np.abs(rolling_median-vals)
-    median_abs_deviation=difference.rolling(k).median()
+    median_abs_deviation=difference.rolling(k, center=True).median()
     threshold= t0 *L * median_abs_deviation
     outlier_idx=difference>threshold
     vals[outlier_idx]=rolling_median
@@ -336,7 +348,9 @@ def smooth_precip_Nayak2010(precip_cumulative):
     precip_cumulative: pandas series of data to smooth
     '''
     
-    precip=precip_cumulative.copy() #copy, to avoid inadvertently altering original data
+    precip=precip_cumulative.copy() #copy, to avoid inadvertently altering original data    
+    precip=precip.interpolate() #fill nans (needed to preserve increases in precip during times where no data was recorded for some reason)
+    
     precip_incr=precip-precip.shift(1)
     #precip_incr[0]=0
     #precip_incr[-1]=0
