@@ -13,9 +13,13 @@ if Glacier+Station=='Wolverine990':
 if Glacier +Station=='Gulkana1480':
    start_good_NWIS_data= '1995-10-03 18'
    pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"/AllYears/Wx/Raw/telemeteredNWIS/" + "NWIS_data_" + Glacier + Station +".csv"
+   
+if Glacier + Station =='Wolverine370':
+    start_good_NWIS_data=
 
 #Read in data
 NWISdat=pd.read_csv(pth)
+data_cols=NWISdat.columns[~NWISdat.columns.str.contains('time')].tolist() #store names of data columns
 
 date_format='%Y/%m/%d %H:%M'
 timezone='America/Anchorage' #choose from pytz.all_timezones
@@ -26,12 +30,24 @@ NWISdat['DateTime'].timezone='UTC'
 #Round to nearest 15 minutes (transmission/ logger time may not be exactly @ the 15 min)
 NWISdat['DateTime']=NWISdat['DateTime'].dt.round('15min')
 
+#Drop duplicates where NWIS has stored at the logger time and identically at the telemetered time (maybe ~ 1 min different)
+NWISdat=NWISdat.drop_duplicates(subset=['DateTime'], keep='first') #IMPORTANT; here, the first is the good; other telemetered datasets may need different treatment here!!!
+
 NWISdat=NWISdat.set_index('DateTime')
 
 #Populate local time column
 local_timezone=pytz.timezone(timezone)
 NWISdat['local_time'] = NWISdat.index.tz_localize('UTC').tz_convert(local_timezone)
 
+#Reindex to 15min to ensure no timesteps are skipped
+full_range_15_min = pd.date_range(NWISdat.index[0], NWISdat.index[-1], freq='15min')
+NWISdat=NWISdat.reindex(index=full_range_15_min, fill_value=pd.np.nan)
+
+
+#for col in ['Tpassive1', 'Tpassive2', 'WindSpeed']:
+col='Tpassive1'
+dCol=NWISdat[col]-NWISdat[col].shift(1)
+d2Col=dCol-dCol.shift(1)
 
 og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/emily/" + Glacier.lower() + Station +"_15min_all.csv"
 dat=pd.read_csv(og_pth)
