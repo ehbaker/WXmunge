@@ -13,9 +13,6 @@ if Glacier+Station=='Wolverine990':
 if Glacier +Station=='Gulkana1480':
    start_good_NWIS_data= '1995-10-03 18'
    pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"/AllYears/Wx/Raw/telemeteredNWIS/" + "NWIS_data_" + Glacier + Station +".csv"
-   
-if Glacier + Station =='Wolverine370':
-    start_good_NWIS_data=
 
 #Read in data
 NWISdat=pd.read_csv(pth)
@@ -40,6 +37,7 @@ local_timezone=pytz.timezone(timezone)
 NWISdat['local_time'] = NWISdat.index.tz_localize('UTC').tz_convert(local_timezone)
 
 #Reindex to 15min to ensure no timesteps are skipped
+NWISdat=NWISdat.sort_index()
 full_range_15_min = pd.date_range(NWISdat.index[0], NWISdat.index[-1], freq='15min')
 NWISdat=NWISdat.reindex(index=full_range_15_min, fill_value=pd.np.nan)
 
