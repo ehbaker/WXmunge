@@ -47,7 +47,7 @@ col='Tpassive1'
 dCol=NWISdat[col]-NWISdat[col].shift(1)
 d2Col=dCol-dCol.shift(1)
 
-og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/emily/" + Glacier.lower() + Station +"_15min_all.csv"
+og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station +"_15min_all.csv"
 dat=pd.read_csv(og_pth)
 dat['DateTime']=pd.to_datetime(dat['UTC_time'], format=date_format)
 dat['DateTime'].timezone='UTC'
@@ -80,7 +80,7 @@ AllData.index=AllData.index.tz_localize('UTC', ambiguous='infer')
 AllData['UTC_time']=AllData.index.strftime(date_format)#Create column for true local time (as string, not UTC - X hrs)
 AllData['local_time']=AllData.index.tz_convert(timezone).strftime(date_format)#Create column for true local time (as string, not UTC - X hrs)
 
-save_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier+ r"/AllYears/Wx/LVL0/emily/" + Glacier.lower() + Station+"_15min_NWIS_1990s_added.csv"
+save_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier+ r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station+"_15min_NWIS_1990s_added.csv"
 
 #columns desired in standard output
 out_columns=['UTC_time', 'local_time', 'Tpassive1', 'Tpassive2',
