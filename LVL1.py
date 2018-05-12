@@ -23,6 +23,8 @@ Tpassive1   	5/7/2013 2:15	   11/6/2013 8:00 	bad		       NAN            Wolveri
         if bad_sensor_dates_dat.loc[xx,'Action']=='bad':
             Start_Date=bad_sensor_dates_dat.loc[xx, 'Start_Date']
             End_Date=bad_sensor_dates_dat.loc[xx, 'End_Date']
+            if End_Date=='end':
+                End_Date=dat.index[-1] #set end-date to the last available in the data
             Sensor=bad_sensor_dates_dat.loc[xx, 'Sensor']
             print(str(Start_Date) + " " + str(End_Date) + " " + Sensor)
             dat.loc[Start_Date:End_Date, Sensor]=np.nan
