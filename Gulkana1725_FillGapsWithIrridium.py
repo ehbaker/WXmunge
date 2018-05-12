@@ -30,7 +30,7 @@ alldat=alldat.reset_index()
 telemetered_dat=alldat.copy()
 
 #Read in logger data
-dat=pd.read_csv("Q:\Project Data\GlacierData\Benchmark_Program\Data\Gulkana\AllYears\Wx\LVL0\emily\gulkana1725_15min_all.csv")
+dat=pd.read_csv("Q:\Project Data\GlacierData\Benchmark_Program\Data\Gulkana\AllYears\Wx\LVL0\gulkana1725_15min_all.csv")
 date_format='%Y/%m/%d %H:%M'
 date_format_telemetered='%d %b %Y, %H:%M'
 out_date_format='%Y/%m/%d %H:%M'
@@ -95,22 +95,14 @@ alldat.sort_index(inplace=True)
 #Set output format of time
 alldat.index.tz='UTC' #tell pandas what timezone alldat is in
 
+#Sort again
+alldat.sort_index(inplace=True)
+
+alldat=alldat[~alldat.index.duplicated(keep='first')] #important to have here; before, earlier in script was dropping too many rows!
+
 alldat['UTC_time']=alldat.index.tz_convert('UTC').strftime(out_date_format)#Create column for true local time (as string, not UTC - X hrs)
 
 alldat['local_time']=alldat.index.tz_convert(timezone).strftime(out_date_format)#Create column for true local time (as string, not UTC - X hrs)
 
-#Sort again
-alldat.sort_index(inplace=True)
-
-alldat=alldat.drop_duplicates( keep='first') #important to have here; before, earlier in script was dropping too many rows!
-
-#List columns desired in output
-out_columns=['UTC_time', 'local_time', 'Tpassive1', 'Tpassive2',
-       'TAspirated1', 'TAspirated2', 'RelHum', 'StageCumulative',
-       'TPGCumulative', 'WindSpeed', 'WindGustSpeed', 'WindDir', 
-        'VecAvgWindDir', 'RadiationIn', 'RadiationOut', 'SnowDepth', 'LoggerTemp', 'LoggerBattery']
-
-alldat=alldat[out_columns]
-
-alldat.to_csv(r"Q:/Project Data/GlacierData/Benchmark_Program/Data/Gulkana/AllYears/Wx/LVL0/emily/gulkana1725_15min_all_gaps_filled.csv", index=False, float_format='%g')
+alldat.to_csv(r"Q:/Project Data/GlacierData/Benchmark_Program/Data/Gulkana/AllYears/Wx/LVL0/gulkana1725_15min_all_gaps_filled.csv", index=False, float_format='%g')
 print("Gaps in data at Gulkana 1725 filled with Irridium telemetry data")
