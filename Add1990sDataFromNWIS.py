@@ -4,19 +4,28 @@
 
 import pandas as pd
 import pytz
-from settings import Glacier, Station
+from settings import Glacier, Station, data_columns
 
 if Glacier+Station=='Wolverine990':
     start_good_NWIS_data='1997-08-29 04'
     pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"\AllYears\Wx\Raw\telemeteredNWIS\Historical_1995to2017\NWIS_data_" + Glacier + Station+ ".csv"
-
+    logger_data_exists=True
 if Glacier +Station=='Gulkana1480':
    start_good_NWIS_data= '1995-10-03 18'
    pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"/AllYears/Wx/Raw/telemeteredNWIS/" + "NWIS_data_" + Glacier + Station +".csv"
+   logger_data_exists=True
+if Glacier +Station =='SouthCascade560':
+    start_good_NWIS_data='2010-07-09 10'
+    pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"/AllYears/Wx/Raw/telemeteredNWIS_hut/" + "NWIS_data_" + Glacier + Station +".csv"
+    logger_data_exists=False
 
+if Glacier +Station =='SouthCascade1640':
+    start_good_NWIS_data='1993-08-24 03'
+    pth="Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier + r"/AllYears/Wx/Raw/telemeteredNWIS_gage_SCGMiddleTarn/" + "NWIS_data_" + Glacier + Station +".csv"
+    logger_data_exists=False
 #Read in data
 NWISdat=pd.read_csv(pth)
-data_cols=NWISdat.columns[~NWISdat.columns.str.contains('time')].tolist() #store names of data columns
+#data_cols=NWISdat.columns[~NWISdat.columns.str.contains('time')].tolist() #store names of data columns
 
 date_format='%Y/%m/%d %H:%M'
 timezone='America/Anchorage' #choose from pytz.all_timezones
@@ -41,34 +50,27 @@ NWISdat=NWISdat.sort_index()
 full_range_15_min = pd.date_range(NWISdat.index[0], NWISdat.index[-1], freq='15min')
 NWISdat=NWISdat.reindex(index=full_range_15_min, fill_value=pd.np.nan)
 
-
-#for col in ['Tpassive1', 'Tpassive2', 'WindSpeed']:
-col='Tpassive1'
-dCol=NWISdat[col]-NWISdat[col].shift(1)
-d2Col=dCol-dCol.shift(1)
-
-og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station +"_15min_all.csv"
-dat=pd.read_csv(og_pth)
-dat['DateTime']=pd.to_datetime(dat['UTC_time'], format=date_format)
-dat['DateTime'].timezone='UTC'
-dat=dat.set_index('DateTime')
-
-#These are the columns present in the main file
-out_columns=['UTC_time', 'local_time', 'Tpassive1', 'Tpassive2',
-       'TAspirated1', 'TAspirated2', 'RelHum', 'StageCumulative',
-       'TPGCumulative', 'WindSpeed', 'WindGustSpeed', 'WindDir', 'Barom',
-        'VecAvgWindDir', 'RadiationIn', 'RadiationOut', 'SnowDepth', 'LoggerTemp', 'LoggerBattery']
-
-for col in out_columns:
-    if col not in NWISdat.columns:
-        NWISdat[col]=pd.np.nan #create the column; fill with NANs
-
-#Find beginning of valid logger data
-logger_start=dat.first_valid_index()
-
-NWIS_data_to_add=NWISdat[start_good_NWIS_data:logger_start] #before this, there are only error values recorded by NWIS
-
-AllData=pd.concat([NWIS_data_to_add, dat], axis=0)
+if logger_data_exists:
+    og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station +"_15min_all_LVL0.csv"
+    dat=pd.read_csv(og_pth)
+    dat['DateTime']=pd.to_datetime(dat['UTC_time'], format=date_format)
+    dat['DateTime'].timezone='UTC'
+    dat=dat.set_index('DateTime')
+    
+    #
+    for col in dat.columns:
+        if col not in NWISdat.columns:
+            NWISdat[col]=pd.np.nan #create the column; fill with NANs
+    
+    #Find beginning of valid logger data
+    logger_start=dat.first_valid_index()
+    
+    NWIS_data_to_add=NWISdat[start_good_NWIS_data:logger_start] #before this, there are only error values recorded by NWIS
+    
+    AllData=pd.concat([NWIS_data_to_add, dat], axis=0)
+else:
+    AllData=NWISdat.copy()
+    print('No logger data at ' +Glacier + Station)
 
 #Ensure data is sorted by time
 AllData.sort_index(inplace=True)
@@ -80,23 +82,14 @@ AllData.index=AllData.index.tz_localize('UTC', ambiguous='infer')
 AllData['UTC_time']=AllData.index.strftime(date_format)#Create column for true local time (as string, not UTC - X hrs)
 AllData['local_time']=AllData.index.tz_convert(timezone).strftime(date_format)#Create column for true local time (as string, not UTC - X hrs)
 
-save_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier+ r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station+"_15min_NWIS_1990s_added.csv"
-
-#columns desired in standard output
-out_columns=['UTC_time', 'local_time', 'Tpassive1', 'Tpassive2',
-       'TAspirated1', 'TAspirated2', 'RelHum', 'StageCumulative',
-       'TPGCumulative', 'WindSpeed', 'WindGustSpeed', 'WindDir', 'Barom',
-        'VecAvgWindDir', 'RadiationIn', 'RadiationOut', 'SnowDepth', 'LoggerTemp', 'LoggerBattery']
-
-#If this columns is not in dataframe, create
-for col in out_columns:
-    if col not in AllData.columns:
-        AllData[col]=pd.np.nan #create the column; fill with NANs
-        
-save_dat=AllData[out_columns]
+save_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/" + Glacier+ r"/AllYears/Wx/LVL0/telemetry_added/" + Glacier.lower()+ Station +"_15min_all_LVL0.csv"
 
 #Ensure data does not have duplicates
-save_dat.drop_duplicates(inplace=True)
+save_dat=AllData.drop_duplicates()
+
+#Reorder column
+#out_cols=['local_time', 'UTC_time']+temp_columns + precip_columns +[wind_col] +wind_dir_columns + list(set(save_dat.columns) - set(['local_time', 'UTC_time'] + temp_columns + precip_columns +[wind_col] +wind_dir_columns))
+save_dat=save_dat[['local_time', 'UTC_time']+data_columns]
 
 save_dat.to_csv(save_pth, index=False, float_format='%g')
 print("1990s data added to logger from NWIS at " + Glacier + Station)
