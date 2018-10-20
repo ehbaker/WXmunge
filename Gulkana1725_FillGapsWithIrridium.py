@@ -30,7 +30,7 @@ alldat=alldat.reset_index()
 telemetered_dat=alldat.copy()
 
 #Read in logger data
-dat=pd.read_csv("Q:\Project Data\GlacierData\Benchmark_Program\Data\Gulkana\AllYears\Wx\LVL0\gulkana1725_15min_all.csv")
+dat=pd.read_csv("Q:\Project Data\GlacierData\Benchmark_Program\Data\Gulkana\AllYears\Wx\LVL0\gulkana1725_15min_all_LVL0.csv")
 date_format='%Y/%m/%d %H:%M'
 date_format_telemetered='%d %b %Y, %H:%M'
 out_date_format='%Y/%m/%d %H:%M'
@@ -57,7 +57,7 @@ telemetered_dat['DateTime']=telemetered_dat.DateTime.dt.round('15min')
 
 telemetered_dat=telemetered_dat.set_index('DateTime')
 
-telemetered_dat.rename(columns = {'GUL Temp-AIR4 DCP-raw':'TAspirated1'}, inplace = True)
+telemetered_dat.rename(columns = {'GUL Temp-AIR4 DCP-raw':'Tpassive1'}, inplace = True)
 telemetered_dat.rename(columns = {'GUL Rad-SOLARDOWN4 DCP-raw':'RadiationIn'}, inplace = True)
 telemetered_dat.rename(columns = {'GUL Rad-SOLARUP4 DCP-raw':'RadiationOut'}, inplace = True)
 telemetered_dat.rename(columns = {'GUL Dir-WIND4 DCP-raw':'VecAvgWindDir'}, inplace = True)
@@ -72,7 +72,7 @@ for col in ['TPGCumulative', 'SnowDepth']:
     telemetered_dat[col]=telemetered_dat[col]* 0.001
 
 
-tel_add=telemetered_dat[['TAspirated1', 'RadiationIn', 'RadiationOut', 'VecAvgWindDir', 'WindSpeed', 'TPGCumulative', 'SnowDepth']].copy()
+tel_add=telemetered_dat[['Tpassive1', 'RadiationIn', 'RadiationOut', 'VecAvgWindDir', 'WindSpeed', 'TPGCumulative', 'SnowDepth']].copy()
 
 #Replace missing data in manually defined patches (data is missing)
 ##NOTE - current telemetered data file does NOT include data from 2016/04/30 forward
@@ -104,5 +104,5 @@ alldat['UTC_time']=alldat.index.tz_convert('UTC').strftime(out_date_format)#Crea
 
 alldat['local_time']=alldat.index.tz_convert(timezone).strftime(out_date_format)#Create column for true local time (as string, not UTC - X hrs)
 
-alldat.to_csv(r"Q:/Project Data/GlacierData/Benchmark_Program/Data/Gulkana/AllYears/Wx/LVL0/gulkana1725_15min_all_gaps_filled.csv", index=False, float_format='%g')
+alldat.to_csv(r"Q:/Project Data/GlacierData/Benchmark_Program/Data/Gulkana/AllYears/Wx/LVL0/telemetry_added/gulkana1725_15min_all_LVL0.csv", index=False, float_format='%g')
 print("Gaps in data at Gulkana 1725 filled with Irridium telemetry data")
