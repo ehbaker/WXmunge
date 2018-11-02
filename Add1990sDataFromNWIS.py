@@ -4,7 +4,10 @@
 
 import pandas as pd
 import pytz
-from settings import Glacier, Station, data_columns
+from settings import Glacier, Station
+import settings
+data_columns, general_data_columns, out_date_format, precip_columns, precip_gage_change, primary_temp_column, temp_columns, timezone, wind_col, wind_dir_columns = settings.get_settings(settings.Glacier, settings.Station)
+
 
 if Glacier+Station=='Wolverine990':
     start_good_NWIS_data='1997-08-29 04'
@@ -49,6 +52,12 @@ NWISdat['local_time'] = NWISdat.index.tz_localize('UTC').tz_convert(local_timezo
 NWISdat=NWISdat.sort_index()
 full_range_15_min = pd.date_range(NWISdat.index[0], NWISdat.index[-1], freq='15min')
 NWISdat=NWISdat.reindex(index=full_range_15_min, fill_value=pd.np.nan)
+
+#Adjust for stage gage legacy issue in telemetered data
+precip_present=len(precip_columns)>0
+if precip_present:
+    if 'StageCumulative' in NWISdat.columns:
+        NWISdat['StageCumulative']=NWISdat.StageCumulative*5 #legacy issue; see comment above
 
 if logger_data_exists:
     og_pth=r"Q:/Project Data/GlacierData/Benchmark_Program/Data/"+ Glacier + r"/AllYears/Wx/LVL0/" + Glacier.lower() + Station +"_15min_all_LVL0.csv"

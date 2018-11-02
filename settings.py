@@ -10,8 +10,8 @@ out_date_format='%Y/%m/%d %H:%M'
 
 base_path=r"Q:/Project Data/GlacierData/Benchmark_Program/"
 
-Glacier='Sperry'
-Station='2440'
+Glacier='Wolverine'
+Station='990'
 
 def get_settings(Glacier, Station):
    
